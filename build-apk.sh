@@ -20,9 +20,10 @@ javac -encoding UTF-8 -source 8 -target 8 -classpath "$ANDROID_JAR" -d "$WORK/cl
 echo "[2/6] d8 (dex)"
 "$BT/d8" --lib "$ANDROID_JAR" --output "$WORK/dex" $(find "$WORK/classes" -name '*.class')
 
-echo "[3/6] aapt2 link"
+echo "[3/6] aapt2 compile + link"
+"$BT/aapt2" compile --dir app/src/main/res -o "$WORK/res.zip"
 "$BT/aapt2" link -o "$WORK/app-unsigned.apk" -I "$ANDROID_JAR" \
-  --manifest app/src/main/AndroidManifest.xml
+  --manifest app/src/main/AndroidManifest.xml "$WORK/res.zip"
 
 echo "[4/6] add classes.dex + zipalign"
 ( cd "$WORK/dex" && zip -q "../app-unsigned.apk" classes.dex )

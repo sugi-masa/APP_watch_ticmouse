@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.ticmouseproto"
-    android:versionCode="4"
-    android:versionName="0.4-prototype">
+    android:versionCode="5"
+    android:versionName="0.4.1-prototype">
 
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
@@ -14,7 +14,8 @@
     <application
         android:allowBackup="false"
         android:label="TicMouse Proto"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@style/AppTheme">
 
         <activity
             android:name=".MainActivity"

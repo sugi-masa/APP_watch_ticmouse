@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Wear OS の「左端から右スワイプで戻る/閉じる」を無効化したテーマ。
+         マウス操作で右方向のドラッグが必須のため、アプリ内では閉じないようにする。
+         終了は時計の側面ボタン（ホーム）で行う。 -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowSwipeToDismiss">false</item>
+    </style>
+</resources>
