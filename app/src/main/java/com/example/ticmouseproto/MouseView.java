@@ -28,6 +28,7 @@ import android.os.Vibrator;
 import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewParent;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -114,6 +115,7 @@ public class MouseView extends View {
     private boolean panelOpen = false;
     private final RectF panelRect = new RectF(), panelHidBtn = new RectF(), panelCloseBtn = new RectF();
     private final RectF panelDiscBtn = new RectF(), panelConnBtn = new RectF();
+    private boolean swipeFrameFound = false;
     private String hidStatus = "未実行";
     private String connStatus = "未接続";
     private BluetoothHidDevice hidDevice;
@@ -139,6 +141,12 @@ public class MouseView extends View {
 
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        // 「右スワイプで閉じる」枠が親にいるか記録する（切り分け用）。
+        ViewParent par = getParent();
+        while (par instanceof View) {
+            if (par.getClass().getSimpleName().contains("SwipeDismiss")) { swipeFrameFound = true; break; }
+            par = ((View) par).getParent();
+        }
         handler.removeCallbacks(loop);
         handler.post(loop);
     }
@@ -542,7 +550,7 @@ public class MouseView extends View {
         p.setTextSize(R * 0.075f); p.setFakeBoldText(true);
         c.drawText("接続パネル", cx, panelRect.top + R * 0.12f, p);
         p.setFakeBoldText(false); p.setTextSize(R * 0.056f); p.setColor(COL_MUTED);
-        c.drawText("Proto 0.4 / API " + Build.VERSION.SDK_INT, cx, panelRect.top + R * 0.225f, p);
+        c.drawText("0.4.2 / API " + Build.VERSION.SDK_INT + (swipeFrameFound ? " / SD:有" : " / SD:無"), cx, panelRect.top + R * 0.225f, p);
         c.drawText("PC向け Bluetooth HIDマウス", cx, panelRect.top + R * 0.325f, p);
         p.setColor(COL_CYAN); p.setTextSize(R * 0.06f);
         String s = hidStatus;
@@ -572,6 +580,8 @@ public class MouseView extends View {
 
     // ---------- touch ----------
     @Override public boolean onTouchEvent(MotionEvent e) {
+        // 親（スワイプで閉じる枠）にタッチを横取りさせない。これが本命の対策。
+        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
         int action = e.getActionMasked();
         int idx = e.getActionIndex();
         int pid = e.getPointerId(idx);
