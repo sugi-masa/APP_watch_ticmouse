@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothHidDeviceAppSdpSettings;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -28,6 +29,9 @@ import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.View;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executor;
 
 /**
@@ -109,9 +113,16 @@ public class MouseView extends View {
     // Test panel / HID
     private boolean panelOpen = false;
     private final RectF panelRect = new RectF(), panelHidBtn = new RectF(), panelCloseBtn = new RectF();
+    private final RectF panelDiscBtn = new RectF(), panelConnBtn = new RectF();
     private String hidStatus = "未実行";
+    private String connStatus = "未接続";
     private BluetoothHidDevice hidDevice;
     private boolean hidRegistered = false;
+    private BluetoothDevice hidHost;
+    private int hidConnState = BluetoothProfile.STATE_DISCONNECTED;
+    private int hidButtons = 0;
+    private float hidAccX = 0f, hidAccY = 0f, wheelAcc = 0f;
+    private int connIndex = 0;
 
     private final Runnable loop = new Runnable() {
         @Override public void run() {
@@ -173,7 +184,9 @@ public class MouseView extends View {
                 Color.rgb(0x2B, 0x2E, 0x33), Color.rgb(0x1F, 0x21, 0x24), Shader.TileMode.CLAMP);
         if (!cursorInit) { curX = cx; curY = cy - R * 0.79f; cursorInit = true; }
         panelRect.set(cx - R * 0.80f, cy - R * 0.64f, cx + R * 0.80f, cy + R * 0.64f);
-        panelHidBtn.set(panelRect.left + R * 0.07f, panelRect.bottom - R * 0.30f, cx - R * 0.03f, panelRect.bottom - R * 0.07f);
+        panelHidBtn.set(panelRect.left + R * 0.07f, panelRect.bottom - R * 0.55f, cx - R * 0.03f, panelRect.bottom - R * 0.33f);
+        panelDiscBtn.set(cx + R * 0.03f, panelRect.bottom - R * 0.55f, panelRect.right - R * 0.07f, panelRect.bottom - R * 0.33f);
+        panelConnBtn.set(panelRect.left + R * 0.07f, panelRect.bottom - R * 0.30f, cx - R * 0.03f, panelRect.bottom - R * 0.07f);
         panelCloseBtn.set(cx + R * 0.03f, panelRect.bottom - R * 0.30f, panelRect.right - R * 0.07f, panelRect.bottom - R * 0.07f);
     }
 
@@ -197,7 +210,11 @@ public class MouseView extends View {
                 float ux = leverDx / (mag == 0 ? 1 : mag), uy = leverDy / (mag == 0 ? 1 : mag);
                 float dt = 0.033f;
                 if (scrollMode) {
-                    scrollTotal += -uy * speed * dt / stepPx();
+                    float notch = -uy * speed * dt / stepPx();
+                    scrollTotal += notch;
+                    wheelAcc += notch;
+                    int wn = (int) wheelAcc;
+                    if (wn != 0) { wheelAcc -= wn; hidWheel(wn); }
                     moveCursor(ux * speed * dt, 0);
                 } else {
                     moveCursor(ux * speed * dt, uy * speed * dt);
@@ -233,12 +250,13 @@ public class MouseView extends View {
         float d = (float) Math.hypot(curX - cx, curY - cy);
         float max = R * 0.93f;
         if (d > max) { curX = cx + (curX - cx) / d * max; curY = cy + (curY - cy) / d * max; }
+        feedHid(dx, dy);
     }
 
     private void ringStep(int sector) {
         if (scrollMode) {
-            if (sector == 0) scrollTotal += 1;
-            else if (sector == 2) scrollTotal -= 1;
+            if (sector == 0) { scrollTotal += 1; hidWheel(1); }
+            else if (sector == 2) { scrollTotal -= 1; hidWheel(-1); }
             else moveCursor(sector == 1 ? stepPx() : -stepPx(), 0);
             lastEvent = "スクロール " + (int) scrollTotal;
             return;
@@ -484,12 +502,14 @@ public class MouseView extends View {
         p.setStyle(Paint.Style.FILL); p.setTextSize(R * 0.05f);
         p.setTextAlign(Paint.Align.CENTER);
         if (isLocal) {
-            float tw = p.measureText("LOCAL");
-            p.setColor(COL_CYAN);
+            boolean linked = hidConnState == BluetoothProfile.STATE_CONNECTED;
+            String label = linked ? "PC LINK" : (hidRegistered ? "HID ON" : "LOCAL");
+            float tw = p.measureText(label);
+            p.setColor(linked ? Color.rgb(0x8F, 0xE3, 0xA8) : COL_CYAN);
             c.drawCircle(x - tw / 2f - R * 0.036f, y - R * 0.017f, R * 0.019f, p);
             p.setColor(COL_MUTED);
             p.setLetterSpacing(0.2f);
-            c.drawText("LOCAL", x, y, p);
+            c.drawText(label, x, y, p);
             p.setLetterSpacing(0f);
         } else {
             p.setColor(scrollMode ? COL_CYAN : COL_MUTED);
@@ -520,27 +540,33 @@ public class MouseView extends View {
         c.drawRoundRect(panelRect, R * 0.08f, R * 0.08f, p);
         p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(R * 0.075f); p.setFakeBoldText(true);
-        c.drawText("テストパネル", cx, panelRect.top + R * 0.13f, p);
-        p.setFakeBoldText(false); p.setTextSize(R * 0.058f); p.setColor(COL_MUTED);
-        c.drawText("端末API: " + Build.VERSION.SDK_INT + " / Proto 0.3", cx, panelRect.top + R * 0.24f, p);
-        c.drawText("HID登録テスト（PC向け）", cx, panelRect.top + R * 0.36f, p);
-        p.setColor(COL_CYAN); p.setTextSize(R * 0.062f);
+        c.drawText("接続パネル", cx, panelRect.top + R * 0.12f, p);
+        p.setFakeBoldText(false); p.setTextSize(R * 0.056f); p.setColor(COL_MUTED);
+        c.drawText("Proto 0.4 / API " + Build.VERSION.SDK_INT, cx, panelRect.top + R * 0.225f, p);
+        c.drawText("PC向け Bluetooth HIDマウス", cx, panelRect.top + R * 0.325f, p);
+        p.setColor(COL_CYAN); p.setTextSize(R * 0.06f);
         String s = hidStatus;
         if (s.length() > 18) {
-            c.drawText(s.substring(0, 18), cx, panelRect.top + R * 0.48f, p);
-            c.drawText(s.substring(18), cx, panelRect.top + R * 0.59f, p);
+            c.drawText(s.substring(0, 18), cx, panelRect.top + R * 0.43f, p);
+            c.drawText(s.substring(18), cx, panelRect.top + R * 0.525f, p);
         } else {
-            c.drawText(s, cx, panelRect.top + R * 0.48f, p);
+            c.drawText(s, cx, panelRect.top + R * 0.43f, p);
+            p.setColor(COL_TEXT);
+            String cs = connStatus;
+            if (cs.length() > 18) cs = cs.substring(0, 18);
+            c.drawText(cs, cx, panelRect.top + R * 0.525f, p);
         }
-        // Buttons
+        // Buttons (2 rows)
+        RectF[] btns = {panelHidBtn, panelDiscBtn, panelConnBtn, panelCloseBtn};
         p.setStyle(Paint.Style.FILL); p.setColor(Color.rgb(0x24, 0x27, 0x2B));
-        c.drawRoundRect(panelHidBtn, R * 0.05f, R * 0.05f, p);
-        c.drawRoundRect(panelCloseBtn, R * 0.05f, R * 0.05f, p);
+        for (RectF b : btns) c.drawRoundRect(b, R * 0.05f, R * 0.05f, p);
         p.setStyle(Paint.Style.STROKE); p.setColor(COL_PAD_LINE); p.setStrokeWidth(1.5f);
-        c.drawRoundRect(panelHidBtn, R * 0.05f, R * 0.05f, p);
-        c.drawRoundRect(panelCloseBtn, R * 0.05f, R * 0.05f, p);
-        p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); p.setTextSize(R * 0.06f);
-        c.drawText(hidRegistered ? "HID解除" : "HIDテスト", panelHidBtn.centerX(), panelHidBtn.centerY() + R * 0.02f, p);
+        for (RectF b : btns) c.drawRoundRect(b, R * 0.05f, R * 0.05f, p);
+        p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); p.setTextSize(R * 0.058f);
+        c.drawText(hidRegistered ? "HID解除" : "HID登録", panelHidBtn.centerX(), panelHidBtn.centerY() + R * 0.02f, p);
+        c.drawText("公開する", panelDiscBtn.centerX(), panelDiscBtn.centerY() + R * 0.02f, p);
+        boolean linked = hidConnState == BluetoothProfile.STATE_CONNECTED;
+        c.drawText(linked ? "切断" : "PCに接続", panelConnBtn.centerX(), panelConnBtn.centerY() + R * 0.02f, p);
         c.drawText("閉じる", panelCloseBtn.centerX(), panelCloseBtn.centerY() + R * 0.02f, p);
     }
 
@@ -576,6 +602,7 @@ public class MouseView extends View {
             case MotionEvent.ACTION_CANCEL: {
                 touches.clear();
                 leverPointerId = -1; leverDx = 0; leverDy = 0;
+                if (hidButtons != 0) { hidButtons = 0; hidSend(0, 0, 0); }
                 break;
             }
         }
@@ -586,6 +613,8 @@ public class MouseView extends View {
     private void handleDown(int pid, float x, float y, long now) {
         if (panelOpen) {
             if (panelHidBtn.contains(x, y)) { onHidButton(); return; }
+            if (panelDiscBtn.contains(x, y)) { onDiscoverableButton(); return; }
+            if (panelConnBtn.contains(x, y)) { onConnectButton(); return; }
             if (panelCloseBtn.contains(x, y)) { panelOpen = false; return; }
             return; // consume everything else while panel is open
         }
@@ -614,8 +643,10 @@ public class MouseView extends View {
             t.mode = MODE_BOTTOM; t.bottomScroll = th < 180; touches.put(pid, t);
         } else if (th >= 240) {
             t.mode = MODE_CLICK_L; touches.put(pid, t);
+            hidSetButton(true, true);
         } else {
             t.mode = MODE_CLICK_R; touches.put(pid, t);
+            hidSetButton(false, true);
         }
     }
 
@@ -634,6 +665,7 @@ public class MouseView extends View {
         long held = now - t.downMs;
         if (t.mode == MODE_CLICK_L || t.mode == MODE_CLICK_R) {
             boolean left = t.mode == MODE_CLICK_L;
+            hidSetButton(left, false);
             if (t.dragging) {
                 lastEvent = (left ? "左" : "右") + "ドラッグ終了";
             } else if (held < 300) {
@@ -661,7 +693,9 @@ public class MouseView extends View {
             Context ctx = getContext();
             if (ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
                 hidStatus = "Bluetooth権限を許可してね";
-                ((Activity) ctx).requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQ_BT_CONNECT);
+                ((Activity) ctx).requestPermissions(new String[]{
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.BLUETOOTH_ADVERTISE}, REQ_BT_CONNECT);
                 return;
             }
         }
@@ -724,6 +758,15 @@ public class MouseView extends View {
                     invalidate();
                 }
                 @Override public void onConnectionStateChanged(BluetoothDevice device, int state) {
+                    hidConnState = state;
+                    if (state == BluetoothProfile.STATE_CONNECTED) {
+                        hidHost = device;
+                        connStatus = "接続済み: " + safeName(device);
+                        buzz(20);
+                    } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
+                        if (device != null && device.equals(hidHost)) hidHost = null;
+                        connStatus = "未接続";
+                    }
                     invalidate();
                 }
             };
@@ -740,5 +783,103 @@ public class MouseView extends View {
             if (hidDevice != null && hidRegistered) hidDevice.unregisterApp();
         } catch (Exception ignored) {}
         hidRegistered = false;
+        hidHost = null;
+        hidConnState = BluetoothProfile.STATE_DISCONNECTED;
+        connStatus = "未接続";
+    }
+
+    // ---------- HID mouse engine (0.4) ----------
+    private String safeName(BluetoothDevice device) {
+        if (device == null) return "PC";
+        try {
+            String n = device.getName();
+            return (n == null || n.isEmpty()) ? "PC" : n;
+        } catch (Exception e) {
+            return "PC";
+        }
+    }
+
+    private boolean hidConnected() {
+        return hidDevice != null && hidRegistered && hidHost != null
+                && hidConnState == BluetoothProfile.STATE_CONNECTED;
+    }
+
+    private static int clamp127(int v) { return Math.max(-127, Math.min(127, v)); }
+
+    /** Send one HID mouse report stream: [buttons, dx, dy, wheel], split at ±127. */
+    private void hidSend(int dx, int dy, int wheel) {
+        if (!hidConnected()) return;
+        try {
+            int rx = dx, ry = dy;
+            boolean first = true;
+            do {
+                int sx = clamp127(rx), sy = clamp127(ry);
+                byte[] data = new byte[]{(byte) hidButtons, (byte) sx, (byte) sy,
+                        (byte) (first ? clamp127(wheel) : 0)};
+                hidDevice.sendReport(hidHost, 0, data);
+                rx -= sx; ry -= sy; first = false;
+            } while (rx != 0 || ry != 0);
+        } catch (Exception ignored) {}
+    }
+
+    private void feedHid(float dx, float dy) {
+        if (!hidConnected()) { hidAccX = 0; hidAccY = 0; return; }
+        hidAccX += dx * 2.5f; hidAccY += dy * 2.5f;
+        int ix = (int) hidAccX, iy = (int) hidAccY;
+        if (ix != 0 || iy != 0) { hidAccX -= ix; hidAccY -= iy; hidSend(ix, iy, 0); }
+    }
+
+    private void hidSetButton(boolean left, boolean down) {
+        int bit = left ? 1 : 2;
+        int nb = down ? (hidButtons | bit) : (hidButtons & ~bit);
+        if (nb != hidButtons) { hidButtons = nb; hidSend(0, 0, 0); }
+    }
+
+    private void hidWheel(int n) {
+        if (n != 0) hidSend(0, 0, n);
+    }
+
+    private void onDiscoverableButton() {
+        try {
+            Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+            intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+            ((Activity) getContext()).startActivity(intent);
+            connStatus = "5分間、他の機器から見える状態";
+        } catch (Exception ex) {
+            connStatus = "公開に失敗: " + ex.getClass().getSimpleName();
+        }
+        invalidate();
+    }
+
+    private void onConnectButton() {
+        if (hidConnected()) {
+            try { hidDevice.disconnect(hidHost); } catch (Exception ignored) {}
+            connStatus = "切断した";
+            invalidate();
+            return;
+        }
+        if (!hidRegistered || hidDevice == null) {
+            connStatus = "先にHID登録してね";
+            invalidate();
+            return;
+        }
+        try {
+            BluetoothManager bm = (BluetoothManager) getContext().getSystemService(Context.BLUETOOTH_SERVICE);
+            BluetoothAdapter adapter = bm != null ? bm.getAdapter() : null;
+            Set<BluetoothDevice> bonded = adapter != null ? adapter.getBondedDevices() : null;
+            if (bonded == null || bonded.isEmpty()) {
+                connStatus = "ペアリング済みの機器がない";
+                invalidate();
+                return;
+            }
+            List<BluetoothDevice> list = new ArrayList<>(bonded);
+            BluetoothDevice target = list.get(connIndex % list.size());
+            connIndex++;
+            boolean ok = hidDevice.connect(target);
+            connStatus = (ok ? "接続中…: " : "接続要求に失敗: ") + safeName(target);
+        } catch (Exception ex) {
+            connStatus = "接続例外: " + ex.getClass().getSimpleName();
+        }
+        invalidate();
     }
 }
