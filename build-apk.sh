@@ -20,10 +20,12 @@ javac -encoding UTF-8 -source 8 -target 8 -classpath "$ANDROID_JAR" -d "$WORK/cl
 echo "[2/6] d8 (dex)"
 "$BT/d8" --lib "$ANDROID_JAR" --output "$WORK/dex" $(find "$WORK/classes" -name '*.class')
 
-echo "[3/6] aapt2 compile + link"
-"$BT/aapt2" compile --dir app/src/main/res -o "$WORK/res.zip"
+echo "[3/6] aapt2 link"
+# NOTE: res/ (AppTheme) is intentionally NOT bundled since 0.4.3.
+# APKs built with the compiled resources failed to install on the watch
+# while the res-less 0.3 installed fine; swipe guards are Java-only now.
 "$BT/aapt2" link -o "$WORK/app-unsigned.apk" -I "$ANDROID_JAR" \
-  --manifest app/src/main/AndroidManifest.xml "$WORK/res.zip"
+  --manifest app/src/main/AndroidManifest.xml
 
 echo "[4/6] add classes.dex + zipalign"
 ( cd "$WORK/dex" && zip -q "../app-unsigned.apk" classes.dex )
