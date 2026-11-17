@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.ticmouseproto"
-    android:versionCode="9"
-    android:versionName="0.5.0-prototype">
+    android:versionCode="10"
+    android:versionName="0.5.1-prototype">
 
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
@@ -20,6 +20,7 @@
 
     <application
         android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
         android:label="TicMouse Proto"
         android:theme="@android:style/Theme.Material.NoActionBar">
 

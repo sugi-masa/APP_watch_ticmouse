@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TicMouse Phone icon: watch face + cursor badge (bottom right). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#101215"
+        android:pathData="M0,0h108v108h-108z" />
+    <path
+        android:fillColor="#2F3D34"
+        android:pathData="M23.0,65.3 L13.6,68.7 A43,43 0 0 1 46.5,11.6 L48.3,21.5 A33,33 0 0 0 23.0,65.3 Z" />
+    <path
+        android:fillColor="#2F3D4A"
+        android:pathData="M59.7,21.5 L61.5,11.6 A43,43 0 0 1 94.4,68.7 L85.0,65.3 A33,33 0 0 0 59.7,21.5 Z" />
+    <path
+        android:fillColor="#141518"
+        android:strokeColor="#7D858D"
+        android:strokeWidth="2"
+        android:pathData="M54,24 a30,30 0 1,0 0.001,0" />
+    <path
+        android:fillColor="#2A2D31"
+        android:strokeColor="#878F96"
+        android:strokeWidth="1.5"
+        android:pathData="M54,37 a17,17 0 1,0 0.001,0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#7FD4E8"
+        android:strokeWidth="2.5"
+        android:pathData="M54,48.5 a5.5,5.5 0 1,0 0.001,0" />
+    <path
+        android:fillColor="#7FD4E8"
+        android:pathData="M54,52 a2,2 0 1,0 0.001,0" />
+    <!-- cursor badge -->
+    <path
+        android:fillColor="#141518"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:pathData="M82,71.5 a10.5,10.5 0 1,0 0.001,0" />
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M82,78.8 a3.2,3.2 0 1,0 0.001,0" />
+</vector>

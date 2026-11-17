@@ -10,29 +10,32 @@ ANDROID_JAR="$SDK/platforms/android-34/android.jar"
 OUT="app/build-output"
 WORK="$OUT/work"
 mkdir -p "$WORK"
-rm -rf "$WORK/classes" "$WORK/dex"
-mkdir -p "$WORK/classes" "$WORK/dex"
+rm -rf "$WORK/classes" "$WORK/dex" "$WORK/res-compiled"
+mkdir -p "$WORK/classes" "$WORK/dex" "$WORK/res-compiled"
 
-echo "[1/6] javac"
+echo "[1/7] javac"
 find app/src/main/java -name '*.java' > "$WORK/sources.txt"
 javac -encoding UTF-8 -source 8 -target 8 -classpath "$ANDROID_JAR" -d "$WORK/classes" @"$WORK/sources.txt"
 
-echo "[2/6] d8 (dex)"
+echo "[2/7] d8 (dex)"
 "$BT/d8" --lib "$ANDROID_JAR" --output "$WORK/dex" $(find "$WORK/classes" -name '*.class')
 
-echo "[3/6] aapt2 link"
-# NOTE: res/ (AppTheme) is not bundled; swipe guards are Java-only.
-# The 0.4-0.4.3 install failures were NOT caused by res: the 0.4 manifest
-# rewrite had dropped <uses-sdk>, leaving targetSdk unspecified, which the
-# watch rejects at install time. Keep <uses-sdk> in the manifest.
-"$BT/aapt2" link -o "$WORK/app-unsigned.apk" -I "$ANDROID_JAR" \
-  --manifest app/src/main/AndroidManifest.xml
+echo "[3/7] aapt2 compile (res)"
+# NOTE: res is bundled for the launcher icon. The 0.4-0.4.3 install failures
+# were NOT caused by res: the 0.4 manifest rewrite had dropped <uses-sdk>,
+# leaving targetSdk unspecified, which the watch rejects at install time.
+# Keep <uses-sdk> in the manifest.
+"$BT/aapt2" compile --dir app/src/main/res -o "$WORK/res-compiled/res.zip"
 
-echo "[4/6] add classes.dex + zipalign"
+echo "[4/7] aapt2 link"
+"$BT/aapt2" link -o "$WORK/app-unsigned.apk" -I "$ANDROID_JAR" \
+  --manifest app/src/main/AndroidManifest.xml "$WORK/res-compiled/res.zip"
+
+echo "[5/7] add classes.dex + zipalign"
 ( cd "$WORK/dex" && zip -q "../app-unsigned.apk" classes.dex )
 "$BT/zipalign" -f 4 "$WORK/app-unsigned.apk" "$WORK/app-aligned.apk"
 
-echo "[5/6] debug keystore"
+echo "[6/7] debug keystore"
 KS="$OUT/debug.keystore"
 if [ ! -f "$KS" ]; then
   keytool -genkeypair -keystore "$KS" -storepass android -keypass android \
@@ -40,7 +43,7 @@ if [ ! -f "$KS" ]; then
     -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1
 fi
 
-echo "[6/6] apksigner"
+echo "[7/7] apksigner"
 "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android --key-pass pass:android \
   --out "$OUT/ticmouse-proto.apk" "$WORK/app-aligned.apk"
 "$BT/apksigner" verify --print-certs "$OUT/ticmouse-proto.apk"

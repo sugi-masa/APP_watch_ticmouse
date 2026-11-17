@@ -369,8 +369,8 @@ public class MouseView extends View {
         drawSectorButton(c, 150 + gap, sweep, gradSecL, COL_L_STROKE,
                 isPressed(MODE_CLICK_L), isDragging(MODE_CLICK_L));
         // Labels along the arc (tangential text)
-        drawArcLabel(c, 300, "左クリック", "BTN-L", countL, COL_L_LABEL);
-        drawArcLabel(c, 60, "右クリック", "BTN-R", countR, COL_R_LABEL);
+        drawArcLabel(c, 300, "L", "", countL, COL_L_LABEL);
+        drawArcLabel(c, 60, "R", "", countR, COL_R_LABEL);
     }
 
     /** Sector with drop shadow, top-light gradient fill, edge highlight (depth). */
@@ -416,11 +416,12 @@ public class MouseView extends View {
         c.translate(x, y);
         c.rotate(clockMid);
         p.setStyle(Paint.Style.FILL); p.setTextAlign(Paint.Align.CENTER);
-        p.setColor(color); p.setTextSize(R * 0.072f); p.setFakeBoldText(true);
-        c.drawText(main, 0, -R * 0.008f, p);
+        p.setColor(color); p.setTextSize(R * 0.115f); p.setFakeBoldText(true);
+        c.drawText(main, 0, -R * 0.01f, p);
         p.setFakeBoldText(false); p.setTextSize(R * 0.045f); p.setColor(COL_FAINT);
         p.setLetterSpacing(0.25f);
-        c.drawText(count > 0 ? micro + " ×" + count : micro, 0, R * 0.062f, p);
+        String sub = count > 0 ? (micro.isEmpty() ? "×" + count : micro + " ×" + count) : micro;
+        if (!sub.isEmpty()) c.drawText(sub, 0, R * 0.075f, p);
         p.setLetterSpacing(0f);
         c.restore();
     }
@@ -528,12 +529,26 @@ public class MouseView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         if (isLocal) {
             boolean linked = hidConnState == BluetoothProfile.STATE_CONNECTED;
+            boolean anyLink = linked || phoneLinked;
             String label = linked ? "PC LINK" : (phoneLinked ? "PHONE LINK" : (hidRegistered ? "HID ON" : "LOCAL"));
+            int lamp = anyLink ? Color.rgb(0x8F, 0xE3, 0xA8) : (hidRegistered ? COL_CYAN : COL_MUTED);
+            p.setLetterSpacing(0.3f);
             float tw = p.measureText(label);
-            p.setColor((linked || phoneLinked) ? Color.rgb(0x8F, 0xE3, 0xA8) : COL_CYAN);
-            c.drawCircle(x - tw / 2f - R * 0.036f, y - R * 0.017f, R * 0.019f, p);
-            p.setColor(COL_MUTED);
-            p.setLetterSpacing(0.2f);
+            float lx = x - tw / 2f - R * 0.052f, ly = y - R * 0.018f;
+            // Lamp: soft glow halo + hairline ring + core (ring only when idle)
+            if (anyLink || hidRegistered) {
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(Color.argb(36, Color.red(lamp), Color.green(lamp), Color.blue(lamp)));
+                c.drawCircle(lx, ly, R * 0.037f, p);
+                p.setColor(Color.argb(78, Color.red(lamp), Color.green(lamp), Color.blue(lamp)));
+                c.drawCircle(lx, ly, R * 0.026f, p);
+            }
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(R * 0.006f);
+            p.setColor(Color.argb(150, Color.red(lamp), Color.green(lamp), Color.blue(lamp)));
+            c.drawCircle(lx, ly, R * 0.027f, p);
+            p.setStyle(Paint.Style.FILL); p.setColor(lamp);
+            c.drawCircle(lx, ly, R * 0.013f, p);
+            p.setColor(anyLink ? COL_TEXT : COL_MUTED);
             c.drawText(label, x, y, p);
             p.setLetterSpacing(0f);
         } else {
@@ -567,7 +582,7 @@ public class MouseView extends View {
         p.setTextSize(R * 0.075f); p.setFakeBoldText(true);
         c.drawText("接続パネル", cx, panelRect.top + R * 0.12f, p);
         p.setFakeBoldText(false); p.setTextSize(R * 0.056f); p.setColor(COL_MUTED);
-        c.drawText("0.5.0 / API " + Build.VERSION.SDK_INT + (swipeFrameFound ? " / SD:有" : " / SD:無"), cx, panelRect.top + R * 0.225f, p);
+        c.drawText("0.5.1 / API " + Build.VERSION.SDK_INT + (swipeFrameFound ? " / SD:有" : " / SD:無"), cx, panelRect.top + R * 0.225f, p);
         c.drawText("PC=HID接続 / スマホ=BT接続", cx, panelRect.top + R * 0.325f, p);
         p.setColor(COL_CYAN); p.setTextSize(R * 0.06f);
         String s = hidStatus;

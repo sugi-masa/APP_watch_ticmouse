@@ -10,8 +10,8 @@ android {
         applicationId "com.example.ticmouseproto"
         minSdk 30
         targetSdk 33
-        versionCode 9
-        versionName "0.5.0-prototype"
+        versionCode 10
+        versionName "0.5.1-prototype"
     }
 
     buildTypes {
