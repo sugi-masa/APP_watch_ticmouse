@@ -1,0 +1,4 @@
+// Top-level build file (Android Studio / Gradle builds; the hand build uses build-apk.sh).
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}

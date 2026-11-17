@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.ticmouseproto"
-    android:versionCode="8"
-    android:versionName="0.4.4-prototype">
+    android:versionCode="9"
+    android:versionName="0.5.0-prototype">
 
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />

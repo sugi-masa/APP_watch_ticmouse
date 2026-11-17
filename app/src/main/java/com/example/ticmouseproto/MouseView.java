@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothHidDevice;
 import android.bluetooth.BluetoothHidDeviceAppSdpSettings;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
+import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -30,9 +31,11 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewParent;
 
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Executor;
 
 /**
@@ -114,7 +117,7 @@ public class MouseView extends View {
     // Test panel / HID
     private boolean panelOpen = false;
     private final RectF panelRect = new RectF(), panelHidBtn = new RectF(), panelCloseBtn = new RectF();
-    private final RectF panelDiscBtn = new RectF(), panelConnBtn = new RectF();
+    private final RectF panelDiscBtn = new RectF(), panelConnBtn = new RectF(), panelPhoneBtn = new RectF();
     private boolean swipeFrameFound = false;
     private String hidStatus = "未実行";
     private String connStatus = "未接続";
@@ -125,6 +128,17 @@ public class MouseView extends View {
     private int hidButtons = 0;
     private float hidAccX = 0f, hidAccY = 0f, wheelAcc = 0f;
     private int connIndex = 0;
+
+    // Phone link (0.5): Bluetooth RFCOMM to the TicMouse Phone companion app.
+    // Protocol: [0x01, dxHi, dxLo, dyHi, dyLo] move / [0x02, mask] buttons / [0x03, n] wheel.
+    private static final UUID PHONE_UUID = UUID.fromString("7a9f3c21-5e4b-4d2a-9c81-0f6e5b8d3a47");
+    private BluetoothSocket phoneSocket;
+    private OutputStream phoneOut;
+    private volatile boolean phoneLinked = false;
+    private float phoneAccX = 0f, phoneAccY = 0f;
+    private int phoneButtons = 0;
+    private int phoneIndex = 0;
+    private boolean permForPhone = false;
 
     private final Runnable loop = new Runnable() {
         @Override public void run() {
@@ -159,6 +173,7 @@ public class MouseView extends View {
     void shutdown() {
         handler.removeCallbacks(loop);
         unregisterHid();
+        closePhoneSocket();
     }
 
     private void buzz(long ms) {
@@ -192,10 +207,11 @@ public class MouseView extends View {
                 Color.rgb(0x2B, 0x2E, 0x33), Color.rgb(0x1F, 0x21, 0x24), Shader.TileMode.CLAMP);
         if (!cursorInit) { curX = cx; curY = cy - R * 0.79f; cursorInit = true; }
         panelRect.set(cx - R * 0.80f, cy - R * 0.64f, cx + R * 0.80f, cy + R * 0.64f);
-        panelHidBtn.set(panelRect.left + R * 0.07f, panelRect.bottom - R * 0.55f, cx - R * 0.03f, panelRect.bottom - R * 0.33f);
-        panelDiscBtn.set(cx + R * 0.03f, panelRect.bottom - R * 0.55f, panelRect.right - R * 0.07f, panelRect.bottom - R * 0.33f);
-        panelConnBtn.set(panelRect.left + R * 0.07f, panelRect.bottom - R * 0.30f, cx - R * 0.03f, panelRect.bottom - R * 0.07f);
-        panelCloseBtn.set(cx + R * 0.03f, panelRect.bottom - R * 0.30f, panelRect.right - R * 0.07f, panelRect.bottom - R * 0.07f);
+        panelHidBtn.set(panelRect.left + R * 0.07f, panelRect.bottom - R * 0.68f, cx - R * 0.03f, panelRect.bottom - R * 0.49f);
+        panelDiscBtn.set(cx + R * 0.03f, panelRect.bottom - R * 0.68f, panelRect.right - R * 0.07f, panelRect.bottom - R * 0.49f);
+        panelConnBtn.set(panelRect.left + R * 0.07f, panelRect.bottom - R * 0.46f, cx - R * 0.03f, panelRect.bottom - R * 0.27f);
+        panelPhoneBtn.set(cx + R * 0.03f, panelRect.bottom - R * 0.46f, panelRect.right - R * 0.07f, panelRect.bottom - R * 0.27f);
+        panelCloseBtn.set(panelRect.left + R * 0.07f, panelRect.bottom - R * 0.24f, panelRect.right - R * 0.07f, panelRect.bottom - R * 0.05f);
     }
 
     /** Clock angle: 0 = 12 o'clock, clockwise, 0..360. */
@@ -259,6 +275,7 @@ public class MouseView extends View {
         float max = R * 0.93f;
         if (d > max) { curX = cx + (curX - cx) / d * max; curY = cy + (curY - cy) / d * max; }
         feedHid(dx, dy);
+        feedPhone(dx, dy);
     }
 
     private void ringStep(int sector) {
@@ -511,9 +528,9 @@ public class MouseView extends View {
         p.setTextAlign(Paint.Align.CENTER);
         if (isLocal) {
             boolean linked = hidConnState == BluetoothProfile.STATE_CONNECTED;
-            String label = linked ? "PC LINK" : (hidRegistered ? "HID ON" : "LOCAL");
+            String label = linked ? "PC LINK" : (phoneLinked ? "PHONE LINK" : (hidRegistered ? "HID ON" : "LOCAL"));
             float tw = p.measureText(label);
-            p.setColor(linked ? Color.rgb(0x8F, 0xE3, 0xA8) : COL_CYAN);
+            p.setColor((linked || phoneLinked) ? Color.rgb(0x8F, 0xE3, 0xA8) : COL_CYAN);
             c.drawCircle(x - tw / 2f - R * 0.036f, y - R * 0.017f, R * 0.019f, p);
             p.setColor(COL_MUTED);
             p.setLetterSpacing(0.2f);
@@ -550,8 +567,8 @@ public class MouseView extends View {
         p.setTextSize(R * 0.075f); p.setFakeBoldText(true);
         c.drawText("接続パネル", cx, panelRect.top + R * 0.12f, p);
         p.setFakeBoldText(false); p.setTextSize(R * 0.056f); p.setColor(COL_MUTED);
-        c.drawText("0.4.4 / API " + Build.VERSION.SDK_INT + (swipeFrameFound ? " / SD:有" : " / SD:無"), cx, panelRect.top + R * 0.225f, p);
-        c.drawText("PC向け Bluetooth HIDマウス", cx, panelRect.top + R * 0.325f, p);
+        c.drawText("0.5.0 / API " + Build.VERSION.SDK_INT + (swipeFrameFound ? " / SD:有" : " / SD:無"), cx, panelRect.top + R * 0.225f, p);
+        c.drawText("PC=HID接続 / スマホ=BT接続", cx, panelRect.top + R * 0.325f, p);
         p.setColor(COL_CYAN); p.setTextSize(R * 0.06f);
         String s = hidStatus;
         if (s.length() > 18) {
@@ -564,8 +581,8 @@ public class MouseView extends View {
             if (cs.length() > 18) cs = cs.substring(0, 18);
             c.drawText(cs, cx, panelRect.top + R * 0.525f, p);
         }
-        // Buttons (2 rows)
-        RectF[] btns = {panelHidBtn, panelDiscBtn, panelConnBtn, panelCloseBtn};
+        // Buttons (3 rows)
+        RectF[] btns = {panelHidBtn, panelDiscBtn, panelConnBtn, panelPhoneBtn, panelCloseBtn};
         p.setStyle(Paint.Style.FILL); p.setColor(Color.rgb(0x24, 0x27, 0x2B));
         for (RectF b : btns) c.drawRoundRect(b, R * 0.05f, R * 0.05f, p);
         p.setStyle(Paint.Style.STROKE); p.setColor(COL_PAD_LINE); p.setStrokeWidth(1.5f);
@@ -575,6 +592,7 @@ public class MouseView extends View {
         c.drawText("公開する", panelDiscBtn.centerX(), panelDiscBtn.centerY() + R * 0.02f, p);
         boolean linked = hidConnState == BluetoothProfile.STATE_CONNECTED;
         c.drawText(linked ? "切断" : "PCに接続", panelConnBtn.centerX(), panelConnBtn.centerY() + R * 0.02f, p);
+        c.drawText(phoneLinked ? "スマホ切断" : "スマホ接続", panelPhoneBtn.centerX(), panelPhoneBtn.centerY() + R * 0.02f, p);
         c.drawText("閉じる", panelCloseBtn.centerX(), panelCloseBtn.centerY() + R * 0.02f, p);
     }
 
@@ -613,6 +631,7 @@ public class MouseView extends View {
                 touches.clear();
                 leverPointerId = -1; leverDx = 0; leverDy = 0;
                 if (hidButtons != 0) { hidButtons = 0; hidSend(0, 0, 0); }
+                if (phoneButtons != 0) { phoneButtons = 0; phoneSend(new byte[]{0x02, 0}); }
                 break;
             }
         }
@@ -625,6 +644,7 @@ public class MouseView extends View {
             if (panelHidBtn.contains(x, y)) { onHidButton(); return; }
             if (panelDiscBtn.contains(x, y)) { onDiscoverableButton(); return; }
             if (panelConnBtn.contains(x, y)) { onConnectButton(); return; }
+            if (panelPhoneBtn.contains(x, y)) { onPhoneButton(); return; }
             if (panelCloseBtn.contains(x, y)) { panelOpen = false; return; }
             return; // consume everything else while panel is open
         }
@@ -713,6 +733,13 @@ public class MouseView extends View {
     }
 
     void onBluetoothPermissionResult(boolean granted) {
+        if (permForPhone) {
+            permForPhone = false;
+            if (granted) { connStatus = "権限OK、スマホ接続中…"; connectPhone(); }
+            else connStatus = "権限がなくて未実行";
+            invalidate();
+            return;
+        }
         if (granted) { hidStatus = "権限OK、登録中…"; startHidRegister(); }
         else hidStatus = "権限がなくて未実行";
         invalidate();
@@ -843,10 +870,115 @@ public class MouseView extends View {
         int bit = left ? 1 : 2;
         int nb = down ? (hidButtons | bit) : (hidButtons & ~bit);
         if (nb != hidButtons) { hidButtons = nb; hidSend(0, 0, 0); }
+        phoneSetButton(left, down);
     }
 
     private void hidWheel(int n) {
         if (n != 0) hidSend(0, 0, n);
+        phoneWheel(n);
+    }
+
+    // ---------- Phone link engine (0.5, Bluetooth RFCOMM) ----------
+    private boolean phoneSend(byte[] pkt) {
+        OutputStream out = phoneOut;
+        if (!phoneLinked || out == null) return false;
+        try {
+            out.write(pkt);
+            out.flush();
+            return true;
+        } catch (Exception e) {
+            closePhoneSocket();
+            handler.post(() -> { connStatus = "スマホ切断（送信失敗）"; invalidate(); });
+            return false;
+        }
+    }
+
+    private void feedPhone(float dx, float dy) {
+        if (!phoneLinked) { phoneAccX = 0; phoneAccY = 0; return; }
+        phoneAccX += dx * 3.0f; phoneAccY += dy * 3.0f;
+        int ix = (int) phoneAccX, iy = (int) phoneAccY;
+        if (ix != 0 || iy != 0) {
+            phoneAccX -= ix; phoneAccY -= iy;
+            ix = Math.max(-2000, Math.min(2000, ix));
+            iy = Math.max(-2000, Math.min(2000, iy));
+            phoneSend(new byte[]{0x01, (byte) (ix >> 8), (byte) ix, (byte) (iy >> 8), (byte) iy});
+        }
+    }
+
+    private void phoneSetButton(boolean left, boolean down) {
+        int bit = left ? 1 : 2;
+        int nb = down ? (phoneButtons | bit) : (phoneButtons & ~bit);
+        if (nb != phoneButtons) { phoneButtons = nb; phoneSend(new byte[]{0x02, (byte) nb}); }
+    }
+
+    private void phoneWheel(int n) {
+        if (n != 0) phoneSend(new byte[]{0x03, (byte) n});
+    }
+
+    private void closePhoneSocket() {
+        phoneLinked = false;
+        phoneButtons = 0;
+        try { if (phoneOut != null) phoneOut.close(); } catch (Exception ignored) {}
+        try { if (phoneSocket != null) phoneSocket.close(); } catch (Exception ignored) {}
+        phoneOut = null;
+        phoneSocket = null;
+    }
+
+    private void onPhoneButton() {
+        if (phoneLinked) {
+            closePhoneSocket();
+            connStatus = "スマホ切断した";
+            invalidate();
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 31) {
+            Context ctx = getContext();
+            if (ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                permForPhone = true;
+                connStatus = "Bluetooth権限を許可してね";
+                ((Activity) ctx).requestPermissions(new String[]{
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.BLUETOOTH_ADVERTISE}, REQ_BT_CONNECT);
+                invalidate();
+                return;
+            }
+        }
+        connectPhone();
+    }
+
+    private void connectPhone() {
+        connStatus = "スマホに接続中…";
+        invalidate();
+        new Thread(() -> {
+            try {
+                BluetoothManager bm = (BluetoothManager) getContext().getSystemService(Context.BLUETOOTH_SERVICE);
+                BluetoothAdapter adapter = bm != null ? bm.getAdapter() : null;
+                if (adapter == null || !adapter.isEnabled()) {
+                    handler.post(() -> { connStatus = "BluetoothがOFF"; invalidate(); });
+                    return;
+                }
+                Set<BluetoothDevice> bonded = adapter.getBondedDevices();
+                if (bonded == null || bonded.isEmpty()) {
+                    handler.post(() -> { connStatus = "ペアリング済みの機器がない"; invalidate(); });
+                    return;
+                }
+                List<BluetoothDevice> list = new ArrayList<>(bonded);
+                BluetoothDevice target = list.get(phoneIndex % list.size());
+                phoneIndex++;
+                BluetoothSocket sock = target.createRfcommSocketToServiceRecord(PHONE_UUID);
+                try { adapter.cancelDiscovery(); } catch (Exception ignored) {}
+                sock.connect();
+                phoneSocket = sock;
+                phoneOut = sock.getOutputStream();
+                phoneLinked = true;
+                String nm = safeName(target);
+                handler.post(() -> { connStatus = "スマホ接続: " + nm; buzz(30); invalidate(); });
+            } catch (Exception e) {
+                closePhoneSocket();
+                String msg = "スマホ接続に失敗: " + e.getClass().getSimpleName();
+                handler.post(() -> { connStatus = msg; invalidate(); });
+            }
+        }).start();
     }
 
     private void onDiscoverableButton() {

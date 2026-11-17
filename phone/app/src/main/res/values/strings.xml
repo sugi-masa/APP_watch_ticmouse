@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TicMouse Phone</string>
+    <string name="acc_desc">TicMouse（時計）からの操作でカーソル表示・タップ・ドラッグ・スクロールを行います</string>
+</resources>
