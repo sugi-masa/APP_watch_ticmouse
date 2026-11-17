@@ -550,7 +550,7 @@ public class MouseView extends View {
         p.setTextSize(R * 0.075f); p.setFakeBoldText(true);
         c.drawText("接続パネル", cx, panelRect.top + R * 0.12f, p);
         p.setFakeBoldText(false); p.setTextSize(R * 0.056f); p.setColor(COL_MUTED);
-        c.drawText("0.4.3 / API " + Build.VERSION.SDK_INT + (swipeFrameFound ? " / SD:有" : " / SD:無"), cx, panelRect.top + R * 0.225f, p);
+        c.drawText("0.4.4 / API " + Build.VERSION.SDK_INT + (swipeFrameFound ? " / SD:有" : " / SD:無"), cx, panelRect.top + R * 0.225f, p);
         c.drawText("PC向け Bluetooth HIDマウス", cx, panelRect.top + R * 0.325f, p);
         p.setColor(COL_CYAN); p.setTextSize(R * 0.06f);
         String s = hidStatus;

@@ -21,9 +21,10 @@ echo "[2/6] d8 (dex)"
 "$BT/d8" --lib "$ANDROID_JAR" --output "$WORK/dex" $(find "$WORK/classes" -name '*.class')
 
 echo "[3/6] aapt2 link"
-# NOTE: res/ (AppTheme) is intentionally NOT bundled since 0.4.3.
-# APKs built with the compiled resources failed to install on the watch
-# while the res-less 0.3 installed fine; swipe guards are Java-only now.
+# NOTE: res/ (AppTheme) is not bundled; swipe guards are Java-only.
+# The 0.4-0.4.3 install failures were NOT caused by res: the 0.4 manifest
+# rewrite had dropped <uses-sdk>, leaving targetSdk unspecified, which the
+# watch rejects at install time. Keep <uses-sdk> in the manifest.
 "$BT/aapt2" link -o "$WORK/app-unsigned.apk" -I "$ANDROID_JAR" \
   --manifest app/src/main/AndroidManifest.xml
 
